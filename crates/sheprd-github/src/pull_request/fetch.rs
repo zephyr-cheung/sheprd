@@ -64,8 +64,7 @@ impl Origins {
         deadline: Instant,
         cancelled: &impl Fn() -> bool,
     ) -> crate::Result<(String, String)> {
-        // A remote workspace without daemon metadata never gets this far.
-        let key = input.repo_key.as_deref().ok_or(super::Error::Metadata)?;
+        let key = super::remote::remote_directory(input)?;
         self.0
             .retain(|(_, _, resolved, _)| now.duration_since(*resolved) < ORIGIN_TTL);
         if let Some((.., repository)) = self
@@ -194,7 +193,7 @@ pub(super) fn target(
         }
         Origin::Ssh(target) => {
             let repository = origins.resolve(target, input, Instant::now(), deadline, cancelled)?;
-            let key = input.repo_key.as_deref().ok_or(super::Error::Metadata)?;
+            let key = super::remote::remote_directory(input)?;
             let head = upstream_head(&input.branch, |name| {
                 let timeout = deadline
                     .checked_duration_since(Instant::now())

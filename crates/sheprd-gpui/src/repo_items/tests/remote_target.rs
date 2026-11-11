@@ -20,10 +20,13 @@ fn cancelled_remote_preparation_never_runs_ssh_or_reads_a_local_checkout() {
         )))
     ));
 
+    // Neither a Git directory nor a workspace folder: nothing to read, and no
+    // host is asked.
     let target = Target {
         input: Input {
+            checkout: None,
             repo_key: None,
-            ..target.input
+            branch: "main".into(),
         },
         ..target
     };

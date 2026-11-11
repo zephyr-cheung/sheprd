@@ -122,11 +122,7 @@ pub(super) fn fetch_branch(
 ) -> crate::Result<()> {
     let deadline = Instant::now() + FETCH_TIMEOUT;
     if let crate::pull_request::Origin::Ssh(host) = &target.host {
-        let directory = target
-            .input
-            .repo_key
-            .as_deref()
-            .ok_or(sheprd_github::pull_request::Error::Metadata)?;
+        let directory = crate::pull_request::remote_directory(&target.input)?;
         return super::remote::run(
             host,
             &super::remote::fetch_script(directory, item)?,

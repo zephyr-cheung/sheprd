@@ -45,10 +45,33 @@ fn both_hosts_resolve_forks_and_ignore_non_github_or_duplicate_upstreams() {
     ));
 }
 
+/// The directory is a path on the host, in the spelling the host uses: the
+/// daemon's Git directory when it names one, else the workspace's own folder,
+/// which a Windows daemon reports and `git -C` also reads.
+#[test]
+fn a_hosts_git_directory_or_workspace_folder_is_read() {
+    let mut input = Input {
+        checkout: None,
+        repo_key: None,
+        branch: "main".into(),
+    };
+    assert!(matches!(
+        remote_directory(&input),
+        Err(crate::Error::PullRequest(Error::Metadata))
+    ));
+    input.repo_key = Some(r"C:/repo/.git".into());
+    input.checkout = Some(r"C:/repo".into());
+    assert_eq!(remote_directory(&input).unwrap(), r"C:/repo/.git");
+    input.repo_key = None;
+    assert_eq!(remote_directory(&input).unwrap(), r"C:/repo");
+    input.repo_key = Some(r"\\?\C:\repo\.git".into());
+    assert_eq!(remote_directory(&input).unwrap(), r"\\?\C:\repo\.git");
+}
+
 #[test]
 fn remote_repository_refuses_missing_metadata_invalid_paths_and_expired_deadlines() {
     let mut input = Input {
-        checkout: Some("/local/decoy".into()),
+        checkout: None,
         repo_key: None,
         branch: "main".into(),
     };
@@ -57,6 +80,14 @@ fn remote_repository_refuses_missing_metadata_invalid_paths_and_expired_deadline
         remote_repository("work", &input, deadline, &|| false),
         Err(crate::Error::PullRequest(Error::Metadata))
     ));
+    // A workspace directory is read as it came, so a relative one is refused
+    // before SSH runs.
+    input.checkout = Some("relative".into());
+    assert!(matches!(
+        remote_repository("work", &input, deadline, &|| false),
+        Err(crate::Error::Client(sheprd_client::Error::InvalidGitDir))
+    ));
+    input.checkout = Some("/srv/app".into());
     for path in ["relative", "/repo\nother"] {
         input.repo_key = Some(path.into());
         assert!(matches!(
@@ -65,6 +96,7 @@ fn remote_repository_refuses_missing_metadata_invalid_paths_and_expired_deadline
         ));
     }
     input.repo_key = Some("/repo/.git".into());
+    input.checkout = None;
     // Windows can report the same Instant on consecutive reads. Both an
     // expired deadline and a zero remaining budget must stop before SSH.
     for expired in [Instant::now() - Duration::from_secs(1), Instant::now()] {

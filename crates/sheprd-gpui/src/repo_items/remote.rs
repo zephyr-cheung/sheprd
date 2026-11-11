@@ -13,12 +13,12 @@ pub(super) fn directory(path: &str) -> crate::Result<std::borrow::Cow<'_, str>> 
 }
 
 /// The local branches of the host's repository, in the lines
-/// [`super::branches::parse`] reads. `--git-dir` names the repository the
-/// daemon reported, so no working directory has to be found on the host.
+/// [`super::branches::parse`] reads. `-C` takes the Git directory the daemon
+/// reported or the workspace directory itself, so neither has to be found.
 pub(super) fn branches_script(path: &str, format: &str) -> crate::Result<String> {
     Ok(format!(
         // i18n: data
-        "git -c core.fsmonitor=false --git-dir {} for-each-ref --sort=-committerdate --format={} refs/heads\n",
+        "git -c core.fsmonitor=false -C {} for-each-ref --sort=-committerdate --format={} refs/heads\n",
         shell_quote(&directory(path)?),
         shell_quote(format),
     ))

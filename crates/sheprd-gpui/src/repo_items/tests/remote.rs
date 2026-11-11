@@ -126,7 +126,7 @@ fn invalid_remote_paths_are_refused_before_building_a_command() {
 fn a_windows_repository_lists_its_branches_on_the_host() {
     let script =
         remote::branches_script(r"\\?\C:\repo\.git", "%(refname)%00%(worktreepath)").unwrap();
-    assert!(script.contains(r"--git-dir 'C:\repo\.git'"), "{script}");
+    assert!(script.contains(r"-C 'C:\repo\.git'"), "{script}");
     assert!(!script.contains(r"?\"), "{script}");
     assert!(script.contains("for-each-ref"), "{script}");
     assert!(script.contains("refs/heads"), "{script}");

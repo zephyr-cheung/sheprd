@@ -68,15 +68,12 @@ fn local(input: &Input, cancelled: &impl Fn() -> bool) -> crate::Result<Vec<Bran
     Ok(parse(&output))
 }
 
-/// The branches of a repository that lives on a saved SSH host. The daemon
-/// already named the repository, so no working directory is looked for; its
-/// own Git answers, as it does for a pull request's origin.
+/// The branches of a repository that lives on a saved SSH host: its own Git
+/// answers, at whatever directory the daemon named, as it does for a pull
+/// request's origin.
 fn remote(host: &str, input: &Input, cancelled: &impl Fn() -> bool) -> crate::Result<Vec<Branch>> {
     let deadline = Instant::now() + TIMEOUT;
-    let directory = input
-        .repo_key
-        .as_deref()
-        .ok_or(sheprd_github::pull_request::Error::Metadata)?;
+    let directory = crate::pull_request::remote_directory(input)?;
     let script = super::remote::branches_script(directory, FORMAT)?;
     let output = super::remote::output(host, &script, deadline, cancelled)?;
     Ok(parse(&output))

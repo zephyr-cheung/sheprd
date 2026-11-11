@@ -58,11 +58,7 @@ fn remote_url(
         .ok_or(sheprd_github::pull_request::Error::Timeout)?;
     let value = match &target.host {
         crate::pull_request::Origin::Ssh(host) => {
-            let directory = target
-                .input
-                .repo_key
-                .as_deref()
-                .ok_or(sheprd_github::pull_request::Error::Metadata)?;
+            let directory = crate::pull_request::remote_directory(&target.input)?;
             sheprd_client::remote_config_value(host, directory, &key, timeout, cancelled)?
         }
         crate::pull_request::Origin::Local => {

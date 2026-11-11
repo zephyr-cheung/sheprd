@@ -74,6 +74,18 @@ pub fn base_repository(
     base(origin, upstream.ok().as_deref())
 }
 
+/// The directory a saved SSH host's Git reads the repository from: the Git
+/// directory the daemon reported, or, when it reported none, the workspace
+/// directory, which `git -C` accepts just as well. Read as text on the host
+/// that owns it, never checked by this machine's path rules.
+pub fn remote_directory(input: &super::Input) -> crate::Result<&str> {
+    input
+        .repo_key
+        .as_deref()
+        .or(input.checkout.as_deref())
+        .ok_or_else(|| super::Error::Metadata.into())
+}
+
 /// Resolve a saved SSH host's repository without interpreting its paths on
 /// this machine. Both reads share one deadline and the caller's cancellation.
 pub fn remote_repository(
@@ -82,7 +94,7 @@ pub fn remote_repository(
     deadline: Instant,
     cancelled: &impl Fn() -> bool,
 ) -> crate::Result<Base> {
-    let directory = input.repo_key.as_deref().ok_or(super::Error::Metadata)?;
+    let directory = remote_directory(input)?;
     let read = |key| {
         let timeout = deadline
             .checked_duration_since(Instant::now())
