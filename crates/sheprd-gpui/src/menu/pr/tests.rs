@@ -8,7 +8,8 @@ mod en_xa;
 fn metadata_priority_alternates_with_round_robin_and_skips_ineligible_workspaces() {
     let mut snapshot = crate::sidebar::layout_tests::ssh_snapshot(6);
     snapshot.focused_workspace_id = Some("w5".into());
-    // A saved device requires daemon metadata, so only metadata decides here.
+    // A saved device reads the Git directory its daemon reported, else the
+    // workspace's own folder, so every workspace with a branch is admitted.
     let origin = Origin::Ssh("device".into());
     let branches = |snapshot: &super::ClientShellSnapshot, open, cursor| {
         super::workspace_pr_inputs(snapshot, &origin, open, cursor)
@@ -25,7 +26,7 @@ fn metadata_priority_alternates_with_round_robin_and_skips_ineligible_workspaces
     );
     assert_eq!(
         branches(&snapshot, Some("w4"), 1)[0],
-        "develop",
+        "fix/sidebar-label-width-and-overflow-regression",
         "every other admission serves the rest"
     );
     assert_eq!(
@@ -34,7 +35,9 @@ fn metadata_priority_alternates_with_round_robin_and_skips_ineligible_workspaces
     );
     snapshot.workspaces[3].worktree.as_mut().unwrap().key = "relative".into();
     snapshot.workspaces[4].branch = None;
-    assert_eq!(branches(&snapshot, None, 1).len(), 1);
+    let rest = branches(&snapshot, None, 1);
+    assert_eq!(rest.len(), 4, "only the two ineligible workspaces drop out");
+    assert!(!rest.iter().any(|branch| branch == "develop"));
     snapshot.workspaces.clear();
     assert!(branches(&snapshot, None, 0).is_empty());
 }

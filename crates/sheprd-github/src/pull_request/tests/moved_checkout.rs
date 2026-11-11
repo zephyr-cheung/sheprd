@@ -35,12 +35,11 @@ fn a_moved_main_checkout_is_looked_up_from_its_directory() {
             branch: "main".into(),
         }
     );
-    // A saved device's directory is not on this machine, so it has nothing
-    // left to look up rather than the wrong repository.
-    assert!(matches!(
-        workspace_input(&workspace, &Origin::Ssh("device".into())),
-        Err(Error::PullRequest(crate::pull_request::Error::Metadata))
-    ));
+    // A saved device's directory is not on this machine: that host reads it
+    // itself, at the folder the daemon reported.
+    let device = workspace_input(&workspace, &Origin::Ssh("device".into())).unwrap();
+    assert_eq!(device.checkout, Some(workspace.new_workspace_cwd.clone()));
+    assert!(device.repo_key.is_none());
 }
 
 /// A linked checkout's own path is not in the snapshot, so its metadata is

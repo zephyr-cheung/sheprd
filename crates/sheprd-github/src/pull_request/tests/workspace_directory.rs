@@ -36,7 +36,7 @@ fn a_branch_only_local_workspace_is_looked_up_from_its_directory() {
 }
 
 #[test]
-fn daemon_metadata_still_wins_and_remote_devices_still_require_it() {
+fn daemon_metadata_still_wins_and_a_saved_device_reads_its_own_folder() {
     let cwd = std::env::temp_dir().join("repo");
     let cwd = cwd.to_str().unwrap();
     let key = std::env::temp_dir().join("other/.git");
@@ -51,11 +51,17 @@ fn daemon_metadata_still_wins_and_remote_devices_still_require_it() {
     let input = workspace_input(&known, &Origin::Local).unwrap();
     assert_eq!(input.repo_key.as_deref(), key.to_str());
     assert_eq!(input.checkout, None, "metadata never trusts the directory");
-    // A saved device's directory is not on this machine.
-    assert!(matches!(
-        workspace_input(&workspace(cwd, Some("main")), &Origin::Ssh("device".into())),
-        Err(Error::PullRequest(crate::pull_request::Error::Metadata))
-    ));
+    // A saved device's directory is not on this machine, so its own host reads
+    // it, and no daemon metadata is needed for that.
+    let device = workspace_input(&workspace(cwd, Some("main")), &Origin::Ssh("device".into()));
+    assert_eq!(
+        device.unwrap(),
+        Input {
+            checkout: Some(cwd.into()),
+            repo_key: None,
+            branch: "main".into(),
+        }
+    );
     assert!(matches!(
         workspace_input(&workspace("", Some("main")), &Origin::Local),
         Err(Error::PullRequest(crate::pull_request::Error::Metadata))

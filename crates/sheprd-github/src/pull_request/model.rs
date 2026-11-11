@@ -541,10 +541,11 @@ fn repository_input_on(
 ) -> crate::Result<Input> {
     let key = key.ok_or(super::Error::Metadata)?;
     let branch = valid_branch(branch)?;
+    // The host that owns the path judges it: a Windows daemon reports `C:\…`,
+    // which this machine's POSIX-only rule refused.
     let absolute = match origin {
         Origin::Local => Path::new(key).is_absolute(),
-        // SSH Git commands run in a POSIX shell, including on Windows clients.
-        Origin::Ssh(_) => key.starts_with('/') && !key.chars().any(char::is_control),
+        Origin::Ssh(_) => sheprd_client::ssh::is_absolute_dir(key),
     };
     if !absolute {
         return Err(super::Error::AbsolutePath.into());
@@ -557,13 +558,13 @@ fn repository_input_on(
 }
 
 /// A workspace's lookup key. Daemon worktree metadata wins; the daemon only
-/// attaches it once a worktree was made through Herdr, so a local workspace
-/// that merely sits in a repository falls back to its directory. Its
-/// repository is resolved by Git on the worker, and the checkout is still
-/// verified against the branch before anything is read. Remote devices keep
-/// requiring metadata: their directories are not this machine's. Metadata of
-/// a main checkout whose shell has left that repository names a repository
-/// the workspace is no longer in, so it is not used.
+/// attaches it once a worktree was made through Herdr, so a workspace that
+/// merely sits in a repository falls back to its own folder, which Git reads
+/// just as well. A local checkout is still verified against the branch before
+/// anything is read. A remote workspace's folder is judged by its own host's
+/// rules, never this machine's. Metadata of a main checkout whose shell has
+/// left that repository names a repository the workspace is no longer in, so
+/// it is not used.
 pub fn workspace_input(
     workspace: &sheprd_client::protocol::ClientShellWorkspace,
     origin: &Origin,
@@ -573,15 +574,33 @@ pub fn workspace_input(
             || !crate::checkout::left_checkout(&tree.key, &workspace.new_workspace_cwd)
     });
     let branch = workspace.branch.as_deref();
-    if worktree.is_some() || *origin != Origin::Local || workspace.new_workspace_cwd.is_empty() {
-        return repository_input_on(worktree.map(|tree| tree.key.as_str()), branch, origin);
+    let Some(tree) = worktree else {
+        return workspace_directory_input(&workspace.new_workspace_cwd, branch, origin);
+    };
+    repository_input_on(Some(tree.key.as_str()), branch, origin)
+}
+
+/// The workspace's own folder, for a daemon that named no Git directory: on
+/// this machine for the local daemon, and on the host for a saved SSH one,
+/// whose `C:\…` paths only that host's rules can judge.
+fn workspace_directory_input(
+    directory: &str,
+    branch: Option<&str>,
+    origin: &Origin,
+) -> crate::Result<Input> {
+    if directory.is_empty() {
+        return repository_input_on(None, branch, origin);
     }
     let branch = valid_branch(branch)?;
-    if !Path::new(&workspace.new_workspace_cwd).is_absolute() {
+    let absolute = match origin {
+        Origin::Local => Path::new(directory).is_absolute(),
+        Origin::Ssh(_) => sheprd_client::ssh::is_absolute_dir(directory),
+    };
+    if !absolute {
         return Err(super::Error::AbsolutePath.into());
     }
     Ok(Input {
-        checkout: Some(workspace.new_workspace_cwd.clone()),
+        checkout: Some(directory.into()),
         repo_key: None,
         branch: branch.into(),
     })
