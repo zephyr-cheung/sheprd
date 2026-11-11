@@ -7,6 +7,7 @@ use super::Error;
 use super::fonts::FontSettings;
 use crate::Result;
 use serde::Deserialize;
+use sheprd_control_protocol::ActivityPanel;
 use std::collections::BTreeMap;
 
 /// Spacing the config file sets over the active layout's numbers. Unset keys
@@ -141,6 +142,10 @@ pub struct SidebarStyle {
     /// A colour per host, keyed by the host's display name, as `0xRRGGBB`.
     pub hosts: BTreeMap<String, u32>,
     pub overrides: SidebarOverrides,
+    /// `panels`: the sections the activity bar offers, by name, in the bar's
+    /// order. Unset lists every section this build has. Workspaces stays
+    /// whatever the list says, since it is the way back to the terminals.
+    pub panels: Option<Vec<ActivityPanel>>,
     /// `ports_count`: the number of the user's servers on the bar's Ports
     /// icon, which keeps a light scan of this computer's ports running.
     /// On unless turned off.
@@ -159,6 +164,7 @@ impl Default for SidebarStyle {
             device_footer: DeviceFooter::default(),
             hosts: BTreeMap::new(),
             overrides: SidebarOverrides::default(),
+            panels: None,
             select: SelectMode::default(),
         }
     }
@@ -192,6 +198,7 @@ pub(super) struct SidebarSettings {
     pub(super) hosts: BTreeMap<String, String>,
     pub(super) activity_bar: Option<bool>,
     pub(super) automations: Option<bool>,
+    pub(super) panels: Option<Vec<String>>,
     pub(super) ports_count: Option<bool>,
 }
 
@@ -211,6 +218,19 @@ impl SidebarSettings {
                     })
             })
             .collect::<Result<_, Error>>()?;
+        let panels = self
+            .panels
+            .as_ref()
+            .map(|listed| {
+                listed
+                    .iter()
+                    .map(|name| {
+                        ActivityPanel::parse(name.trim())
+                            .ok_or_else(|| Error::UnknownPanel(name.clone()))
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
         Ok(SidebarStyle {
             activity_bar: self.activity_bar.unwrap_or(true),
             automations: self.automations.unwrap_or(true),
@@ -225,6 +245,7 @@ impl SidebarSettings {
             device_footer: self.device_footer,
             hosts,
             overrides: self.overrides,
+            panels,
             select: self.select,
         })
     }
@@ -266,6 +287,7 @@ impl<'de> Deserialize<'de> for SidebarSettings {
                         }
                         "activity_bar" => settings.activity_bar = Some(map.next_value()?),
                         "automations" => settings.automations = Some(map.next_value()?),
+                        "panels" => settings.panels = Some(map.next_value()?),
                         "ports_count" => settings.ports_count = Some(map.next_value()?),
                         "hosts" => settings.hosts = map.next_value()?,
                         _ => {

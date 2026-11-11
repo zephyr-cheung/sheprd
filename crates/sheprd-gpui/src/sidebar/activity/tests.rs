@@ -10,6 +10,7 @@ mod back;
 mod bubbles;
 mod counts;
 mod layout;
+mod listed_panels;
 mod mod_apps;
 mod pulse;
 mod sections;

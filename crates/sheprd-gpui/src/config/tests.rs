@@ -46,6 +46,7 @@ mod menu_bar;
 mod missing_fonts;
 mod notification_settings;
 mod omarchy_theme;
+mod panels;
 mod preferences;
 mod px0;
 mod quiet_hours;

@@ -211,10 +211,21 @@ impl SheprdWindow {
         self.config.sidebar_style.activity_bar
     }
 
-    /// Whether the bar lists `panel`. A section turned off in the settings
-    /// is not listed, and a window left on it shows Workspaces. Tasks is
-    /// listed while a project uses Beads.
+    /// Whether the bar lists `panel`. A section turned off in the settings,
+    /// or left out of `[sidebar] panels`, is not listed, and a window left on
+    /// it shows Workspaces. Tasks is listed while a project uses Beads, and
+    /// Workspaces always: it is the way back to the terminals.
     pub(crate) fn activity_panel_listed(&self, panel: ActivityPanel) -> bool {
+        if panel != ActivityPanel::Workspaces
+            && self
+                .config
+                .sidebar_style
+                .panels
+                .as_ref()
+                .is_some_and(|listed| !listed.contains(&panel))
+        {
+            return false;
+        }
         match panel {
             ActivityPanel::Automations => self.config.sidebar_style.automations,
             ActivityPanel::Tasks => self.activity.tasks_listed,

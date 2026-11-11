@@ -438,6 +438,12 @@ size = 12
 # starts any host's automation daemon; daemons already running keep running.
 # automations = true
 
+# The sections the bar offers, by name: "overview", "workspaces",
+# "pull-requests", "issues", "tasks", "security", "automations", "ports",
+# "usage". Unset lists every one. Workspaces always stays, since it is the way
+# back to the terminals. A section left out is not read for a count either.
+# panels = ["workspaces", "pull-requests", "issues"]
+
 # A colour per host, keyed by the host's name in the sidebar, as #rgb or
 # #rrggbb. It washes the host's header, its workspace rows, and its agents'
 # rows faintly, so a long list reads by colour. Names with spaces go in quotes.

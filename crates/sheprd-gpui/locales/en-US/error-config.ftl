@@ -46,6 +46,8 @@ error-config-too-many-font-fallbacks = { $table }.fallback must list at most 8 f
 error-config-unknown-keys = Sheprd has no setting { $keys }; config-gpui.toml lists every setting
 # $name is the layout's name as the config wrote it, quoted.
 error-config-unknown-layout = Unknown sidebar layout { $name }
+# $name is the section's name as the config wrote it, quoted.
+error-config-unknown-panel = sidebar.panels lists { $name }, which is not a section of the activity bar
 
 # One line of a terminal theme's colors that did not parse.
 error-config-theme-parse-invalid-color = expected a six-digit RGB hex color (optionally prefixed by #)

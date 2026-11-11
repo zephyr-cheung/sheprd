@@ -82,6 +82,8 @@ pub enum Error {
     UnknownKeys(Vec<String>),
     #[error("Unknown sidebar layout {0:?}")]
     UnknownLayout(String),
+    #[error("sidebar.panels lists {0:?}, which is not a section of the activity bar")]
+    UnknownPanel(String),
     // keep-sorted end
 }
 

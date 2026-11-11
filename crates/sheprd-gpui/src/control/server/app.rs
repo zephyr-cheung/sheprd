@@ -301,6 +301,16 @@ pub(super) fn ui(call: Call<UiOp>, cx: &mut App) -> Response {
                     crate::sidebar::ActivityPanel::Tasks => {
                         "No project in this window has a .beads folder".to_owned()
                     }
+                    panel
+                        if view
+                            .config
+                            .sidebar_style
+                            .panels
+                            .as_ref()
+                            .is_some_and(|listed| !listed.contains(&panel)) =>
+                    {
+                        format!("{} is not listed: [sidebar] panels", panel.name())
+                    }
                     panel => format!(
                         "{} is turned off: [sidebar] {} = false",
                         panel.name(),

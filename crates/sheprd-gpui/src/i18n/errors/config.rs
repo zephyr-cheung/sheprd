@@ -80,6 +80,7 @@ impl Localize for Error {
             }
             Self::UnknownKeys(keys) => fl!("error-config-unknown-keys", keys = keys.join(", ")),
             Self::UnknownLayout(n) => fl!("error-config-unknown-layout", name = format!("{n:?}")),
+            Self::UnknownPanel(n) => fl!("error-config-unknown-panel", name = format!("{n:?}")),
             // keep-sorted end
         }
     }
