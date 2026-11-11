@@ -283,6 +283,20 @@ pub fn remote_origin_url(
     remote_config_value(target, git_dir, "remote.origin.url", timeout, cancelled)
 }
 
+/// A remote directory without Windows' extended-length prefix, which the
+/// host's own shell mangles on the way in (`\\?\C:\app` reaches Git as
+/// `\?\C:\app`, and Git refuses it): `\\?\C:\app` is `C:\app`, and
+/// `\\?\UNC\server\share` is `\\server\share`.
+pub fn plain_remote_dir(dir: &str) -> std::borrow::Cow<'_, str> {
+    if let Some(rest) = dir.strip_prefix("\\\\?\\UNC\\") {
+        return std::borrow::Cow::Owned(format!("\\\\{rest}"));
+    }
+    if let Some(rest) = dir.strip_prefix("\\\\?\\") {
+        return std::borrow::Cow::Borrowed(rest);
+    }
+    std::borrow::Cow::Borrowed(dir)
+}
+
 /// Read one Git configuration value on a saved host using bounded,
 /// noninteractive SSH. `dir` is an absolute Git directory or a directory in a
 /// working tree, since a daemon reports a workspace's Git directory only for
@@ -295,10 +309,11 @@ pub fn remote_config_value(
     cancelled: impl Fn() -> bool,
 ) -> Result<Option<String>> {
     validate_target(target)?;
-    if !dir.starts_with('/') || dir.chars().any(char::is_control) {
+    let dir = plain_remote_dir(dir);
+    if !is_absolute_dir(&dir) {
         return Err(crate::Error::InvalidGitDir);
     }
-    let (status, output) = run_remote(target, &config_command(dir, key), timeout, cancelled)?;
+    let (status, output) = run_remote(target, &config_command(&dir, key), timeout, cancelled)?;
     match status.code() {
         Some(0) => {}
         // `git config --get` exits 1 when the key is absent.
@@ -314,6 +329,26 @@ pub fn remote_config_value(
         return Err(crate::Error::RemoteOutput);
     }
     Ok(Some(value.to_owned()))
+}
+
+/// Whether `dir` is absolute by the convention of the host that owns it: POSIX
+/// (`/srv/app`), a Windows drive (`C:\app`, `C:/app`), a Windows device path
+/// (`\\?\C:\app`) or a UNC share (`\\server\share`). Checked as text
+/// because the host is not this machine, so `std::path` would judge it by the
+/// wrong rules and a Windows checkout would read as invalid.
+pub fn is_absolute_dir(dir: &str) -> bool {
+    if dir.is_empty() || dir.len() > 4096 || dir.chars().any(char::is_control) {
+        return false;
+    }
+    if dir.starts_with('/') {
+        return true;
+    }
+    let bytes = dir.as_bytes();
+    let drive = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/');
+    drive || dir.starts_with(r"\\")
 }
 
 fn config_command(dir: &str, key: &str) -> String {

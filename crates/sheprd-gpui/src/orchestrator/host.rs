@@ -73,14 +73,12 @@ impl SheprdWindow {
 
     /// The folder new tabs of workspace `id` start in.
     pub(crate) fn workspace_folder(&self, id: &str) -> Option<String> {
-        self.live
-            .snapshot
-            .as_deref()?
+        let snapshot = self.live.snapshot.as_deref()?;
+        let workspace = snapshot
             .workspaces
             .iter()
-            .find(|workspace| workspace.workspace_id == id)
-            .map(|workspace| workspace.new_workspace_cwd.clone())
-            .filter(|path| !path.is_empty())
+            .find(|workspace| workspace.workspace_id == id)?;
+        crate::session_model::workspace_folder(snapshot, workspace).map(str::to_owned)
     }
 
     /// The orchestrator's look: the UI font's family at the terminal font's
@@ -175,7 +173,11 @@ impl SheprdWindow {
             };
             let (token, _) = self.github_account(target);
             for workspace in &snapshot.workspaces {
-                let Ok(repo) = OrchestratorRepo::new(workspace.new_workspace_cwd.clone()) else {
+                let Some(checkout) = crate::session_model::workspace_folder(snapshot, workspace)
+                else {
+                    continue;
+                };
+                let Ok(repo) = OrchestratorRepo::new(checkout.to_owned()) else {
                     continue;
                 };
                 let key = repo_key(
@@ -219,7 +221,9 @@ impl SheprdWindow {
             .workspaces
             .iter()
             .find(|shown| shown.workspace_id == workspace)?;
-        let repo = OrchestratorRepo::new(found.new_workspace_cwd.clone()).ok()?;
+        let snapshot = self.live.snapshot.as_deref()?;
+        let checkout = crate::session_model::workspace_folder(snapshot, found)?;
+        let repo = OrchestratorRepo::new(checkout.to_owned()).ok()?;
         Some(repo_key(
             &endpoint.id,
             found.worktree.as_ref().map(|tree| tree.key.as_str()),

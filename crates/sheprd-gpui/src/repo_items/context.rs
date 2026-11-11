@@ -43,12 +43,13 @@ pub(super) fn remote_script(checkout: &str, item: &Item, origin: &Origin) -> cra
     use sheprd_client::shell_quote;
     let checkout = super::remote::directory(checkout)?;
     Ok(format!(
+        // i18n: data
         "set -eu\ndirectory=$(git -c core.fsmonitor=false -C {} rev-parse --absolute-git-dir)\n\
-         case \"$directory\" in /*) ;; *) exit 1 ;; esac\n\
+         case \"$directory\" in /*|[A-Za-z]:*) ;; *) exit 1 ;; esac\n\
          directory=\"$directory/{DIRECTORY}\"\nmkdir -p -- \"$directory\"\n\
          printf '%s' {} > \"$directory/context.json\"\n\
          printf '%s' {} > \"$directory/CONTEXT.md\"\n",
-        shell_quote(checkout),
+        shell_quote(&checkout),
         shell_quote(&json(item, origin)),
         shell_quote(&markdown(item, origin)),
     ))

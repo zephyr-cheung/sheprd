@@ -28,8 +28,24 @@ impl Branch {
     }
 }
 
+/// Where a picker's branches are read. Local Git only reads a repository on
+/// this machine, so a checkout on a saved SSH host is read by the host's own
+/// Git, one bounded command at a time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Source {
+    Local(Input),
+    Ssh { host: String, input: Input },
+}
+
 /// List the branches of the workspace's repository, most recent first.
-pub(crate) fn list(input: &Input, cancelled: &impl Fn() -> bool) -> crate::Result<Vec<Branch>> {
+pub(crate) fn list(source: &Source, cancelled: &impl Fn() -> bool) -> crate::Result<Vec<Branch>> {
+    match source {
+        Source::Local(input) => local(input, cancelled),
+        Source::Ssh { host, input } => remote(host, input, cancelled),
+    }
+}
+
+fn local(input: &Input, cancelled: &impl Fn() -> bool) -> crate::Result<Vec<Branch>> {
     let deadline = Instant::now() + TIMEOUT;
     let repo_key = repository_key(input, deadline, cancelled)?;
     if !Path::new(&repo_key).is_absolute() {
@@ -49,6 +65,20 @@ pub(crate) fn list(input: &Input, cancelled: &impl Fn() -> bool) -> crate::Resul
         })
         .into());
     }
+    Ok(parse(&output))
+}
+
+/// The branches of a repository that lives on a saved SSH host. The daemon
+/// already named the repository, so no working directory is looked for; its
+/// own Git answers, as it does for a pull request's origin.
+fn remote(host: &str, input: &Input, cancelled: &impl Fn() -> bool) -> crate::Result<Vec<Branch>> {
+    let deadline = Instant::now() + TIMEOUT;
+    let directory = input
+        .repo_key
+        .as_deref()
+        .ok_or(sheprd_github::pull_request::Error::Metadata)?;
+    let script = super::remote::branches_script(directory, FORMAT)?;
+    let output = super::remote::output(host, &script, deadline, cancelled)?;
     Ok(parse(&output))
 }
 
@@ -137,7 +167,7 @@ mod tests {
             repo_key: Some(repo.join(".git").to_string_lossy().into_owned()),
             branch: "main".into(),
         };
-        let branches = list(&input, &|| false).unwrap();
+        let branches = list(&Source::Local(input), &|| false).unwrap();
         assert_eq!(
             branches,
             vec![Branch {
@@ -154,7 +184,7 @@ mod tests {
             branch: "main".into(),
         };
         assert!(matches!(
-            list(&input, &|| false),
+            list(&Source::Local(input), &|| false),
             Err(crate::Error::GitHub(sheprd_github::Error::PullRequest(
                 sheprd_github::pull_request::Error::AbsolutePath
             )))

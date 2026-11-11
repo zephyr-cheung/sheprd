@@ -608,16 +608,16 @@ impl SheprdWindow {
         cx.notify();
     }
 
-    /// Read the repository's branches off the UI thread. Local Git only reads
-    /// a repository on this machine, so it is limited to the owned local
-    /// daemon.
+    /// Read the repository's branches off the UI thread: this machine's Git
+    /// for the owned local daemon, and the host's own Git for a saved SSH
+    /// host, whose checkout this machine cannot read.
     fn list_branches(&mut self, cx: &mut Context<Self>) {
-        let input = self.local_repository_input();
+        let source_input = self.branch_source();
         let Some(source) = &mut self.menu.worktree else {
             return;
         };
-        let input = match input {
-            Ok(input) => input,
+        let source_input = match source_input {
+            Ok(source_input) => source_input,
             Err(error) => {
                 source.branches.message = Some(error.to_string());
                 return;
@@ -625,7 +625,7 @@ impl SheprdWindow {
         };
         let work = cx
             .background_executor()
-            .spawn(async move { repo_items::list_branches(&input, &|| false) });
+            .spawn(async move { repo_items::list_branches(&source_input, &|| false) });
         source.branches.loading = true;
         source.branches.message = None;
         source.branches.task = Some(cx.spawn(async move |this, cx| {
@@ -672,20 +672,32 @@ impl SheprdWindow {
         }
     }
 
-    /// The repository to read locally, under the same endpoint and staleness
-    /// rules the PR section already enforces. A workspace the daemon has no
-    /// worktree metadata for is read from its own directory.
-    fn local_repository_input(&self) -> crate::Result<crate::pull_request::Input> {
+    /// Where to read the repository's branches, under the same endpoint and
+    /// staleness rules the PR section already enforces. A kept workspace, and
+    /// the owned local daemon's, are read here; a saved SSH host's checkout is
+    /// read on that host, since this machine's Git cannot see those paths.
+    pub(super) fn branch_source(&self) -> crate::Result<repo_items::BranchSource> {
         if self.menu.target.is_none() || !self.menu_target_current() {
             return Err(crate::Error::StaleWorkspace);
         }
-        // A kept workspace is in a folder on this computer.
-        if self.kept_checkout().is_none()
-            && (self.selected_endpoint != 0 || !self.live.local_daemon_peer)
+        let host = self
+            .pr_origin()
+            .ok_or(sheprd_github::pull_request::Error::UntrustedEndpoint)?;
+        if let crate::pull_request::Origin::Ssh(target) = &host
+            && self.kept_checkout().is_none()
         {
+            return Ok(repo_items::BranchSource::Ssh {
+                host: target.clone(),
+                input: self.menu_target_input(&host)?,
+            });
+        }
+        // A kept workspace is in a folder on this computer.
+        if self.kept_checkout().is_none() && !self.live.local_daemon_peer {
             return Err(sheprd_github::pull_request::Error::UntrustedEndpoint.into());
         }
-        self.menu_target_input(&crate::pull_request::Origin::Local)
+        Ok(repo_items::BranchSource::Local(
+            self.menu_target_input(&crate::pull_request::Origin::Local)?,
+        ))
     }
 
     /// The checkout to read and the accounts to read it with: GitHub's, when

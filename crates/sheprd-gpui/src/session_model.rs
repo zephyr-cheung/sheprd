@@ -39,11 +39,45 @@ pub(crate) fn of_snapshot(snapshot: &ClientShellSnapshot) -> Session {
     }
 }
 
+/// The folder a workspace is in, as its host reports it: Herdr's own
+/// `new_workspace_cwd` when it names one, else the working directory one of its
+/// panes runs in. A Windows daemon leaves `new_workspace_cwd` empty (or `.`),
+/// and a workspace without a folder loses its repository: the owner's avatar,
+/// Issues and pull requests, and Review all read it.
+pub(crate) fn workspace_folder<'a>(
+    snapshot: &'a ClientShellSnapshot,
+    workspace: &'a ClientShellWorkspace,
+) -> Option<&'a str> {
+    let own = workspace.new_workspace_cwd.trim();
+    if named(own) {
+        return Some(own);
+    }
+    snapshot
+        .panes
+        .iter()
+        .filter(|pane| pane.workspace_id == workspace.workspace_id)
+        .find_map(|pane| {
+            let cwd = pane
+                .cwd
+                .as_deref()
+                .or(pane.foreground_cwd.as_deref())?
+                .trim();
+            named(cwd).then_some(cwd)
+        })
+}
+
+/// Whether a workspace's own `new_workspace_cwd` names its folder. A daemon
+/// that has none reports it empty, and some report `.`.
+pub(crate) fn named(folder: &str) -> bool {
+    !folder.is_empty() && folder != "."
+}
+
 fn of_workspace(snapshot: &ClientShellSnapshot, workspace: &ClientShellWorkspace) -> Workspace {
     Workspace {
         ahead_behind: workspace.git_ahead_behind,
         branch: workspace.branch.clone(),
-        cwd: workspace.new_workspace_cwd.clone(),
+        cwd: workspace_folder(snapshot, workspace)
+            .map_or_else(|| workspace.new_workspace_cwd.clone(), str::to_owned),
         custom_label: workspace.custom_label,
         id: workspace.workspace_id.clone(),
         keeper: Keeper::Herdr1,

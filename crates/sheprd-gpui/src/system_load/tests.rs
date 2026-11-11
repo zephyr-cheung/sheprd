@@ -26,6 +26,14 @@ MemTotal:       16384000 kB
 MemAvailable:    4096000 kB
 ";
 
+const WINDOWS: &str = "cores 8
+cpuload 37
+memtotal 68620910592
+memavail 50100367360
+uptime 1087811
+disk C:/ 976762584 476762584 500000000 49% /c
+";
+
 const MACOS: &str = "cores 16
 memsize 68719476736
 Mach Virtual Memory Statistics: (page size of 16384 bytes)
@@ -91,6 +99,31 @@ fn macos_memory_needs_every_counter() {
 }
 
 #[test]
+fn windows_reports_its_own_totals() {
+    let answer = parse(WINDOWS, None).unwrap();
+    assert_eq!(answer.sample.cpu, Some(37.));
+    assert_eq!(answer.sample.cores, Some(8));
+    assert_eq!(answer.sample.uptime, Some(1_087_811));
+    assert_eq!(
+        answer.sample.memory,
+        Some(Memory {
+            used: 68_620_910_592 - 50_100_367_360,
+            total: 68_620_910_592,
+        })
+    );
+    // No counters to compare with the next answer.
+    assert_eq!(answer.ticks, None);
+}
+
+#[test]
+fn windows_without_its_numbers_reads_nothing() {
+    let missing = WINDOWS.replace("memavail ", "memfree ");
+    let answer = parse(&missing, None).unwrap();
+    assert_eq!(answer.sample.memory, None);
+    assert_eq!(answer.sample.cpu, Some(37.));
+}
+
+#[test]
 fn unexpected_output_is_a_typed_error() {
     for text in [
         "",
@@ -132,10 +165,13 @@ fn memory_share_is_bounded() {
 #[test]
 fn uname_selects_the_command() {
     assert_eq!(Os::from_uname("Linux\n"), Some(Os::Linux));
-    assert_eq!(Os::from_uname("Darwin"), Some(Os::MacOs));
+    assert_eq!(Os::from_uname("Darwin"), Some(Os::Mac));
+    assert_eq!(Os::from_uname("MINGW64_NT-10.0-26200"), Some(Os::Windows));
+    assert_eq!(Os::from_uname("MSYS_NT-10.0"), Some(Os::Windows));
     assert_eq!(Os::from_uname("FreeBSD"), None);
     assert!(Os::Linux.command(false).contains("/proc/stat"));
-    assert!(Os::MacOs.command(false).contains("vm_stat"));
+    assert!(Os::Mac.command(false).contains("vm_stat"));
+    assert!(Os::Windows.command(false).contains("Get-CimInstance"));
 }
 
 #[test]
@@ -235,7 +271,7 @@ fn a_remote_shell_is_sampled_with_the_host_command() {
     let mut source = Source::Remote {
         shell,
         os: if cfg!(target_os = "macos") {
-            Os::MacOs
+            Os::Mac
         } else {
             Os::Linux
         },

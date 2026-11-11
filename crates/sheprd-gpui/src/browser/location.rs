@@ -122,14 +122,13 @@ impl TryFrom<SavedOrchestratorRepo> for OrchestratorRepo {
 }
 
 impl OrchestratorRepo {
-    /// An absolute, bounded path without control characters; a remote one
-    /// is a POSIX path whatever this machine's own convention.
+    /// An absolute, bounded path without control characters, judged by the
+    /// convention of the host that owns it rather than this machine's: a
+    /// Windows SSH host checks out under `C:\…`, which `Path::is_absolute` on
+    /// a macOS client rejects, and the repository was then dropped from every
+    /// list.
     pub(crate) fn new(checkout: String) -> crate::orchestrator::Result<Self> {
-        let valid = !checkout.is_empty()
-            && checkout.len() <= 4096
-            && !checkout.chars().any(char::is_control)
-            && (checkout.starts_with('/') || Path::new(&checkout).is_absolute());
-        if !valid {
+        if !sheprd_client::ssh::is_absolute_dir(&checkout) {
             return Err(crate::orchestrator::Error::InvalidCheckout);
         }
         Ok(Self { checkout })

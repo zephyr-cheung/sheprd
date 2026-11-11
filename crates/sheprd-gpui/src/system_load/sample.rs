@@ -76,14 +76,23 @@ impl Ticks {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Os {
     Linux,
-    MacOs,
+    Mac,
+    /// Windows, as an SSH host shows it: the shell there is Git for Windows'
+    /// `/bin/sh`, whose `uname -s` starts with `MINGW64_NT-…`.
+    Windows,
 }
 
 impl Os {
     pub fn from_uname(name: &str) -> Option<Self> {
-        match name.trim() {
-            "Linux" => Some(Self::Linux),  // i18n: data
-            "Darwin" => Some(Self::MacOs), // i18n: data
+        let name = name.trim();
+        // Windows' POSIX layer, the shell Git for Windows puts in front of a
+        // remote command, names itself by its build: `MINGW64_NT-…`,
+        // `MSYS_NT-…`, `CYGWIN_NT-…`.
+        let shells = ["MINGW", "MSYS", "CYGWIN"]; // i18n: data
+        match name {
+            "Linux" => Some(Self::Linux), // i18n: data
+            "Darwin" => Some(Self::Mac),  // i18n: data
+            _ if shells.iter().any(|shell| name.starts_with(shell)) => Some(Self::Windows),
             _ => None,
         }
     }
@@ -108,7 +117,7 @@ impl Os {
                  {}",
                 linux
             ),
-            Self::MacOs => format!(
+            Self::Mac => format!(
                 // i18n: data
                 "printf 'cores '; sysctl -n hw.ncpu; printf 'memsize '; sysctl -n hw.memsize; \
                  vm_stat; printf 'boottime '; sysctl -n kern.boottime; printf 'now '; date +%s; \
@@ -116,6 +125,15 @@ impl Os {
                  printf 'iostat '; iostat -n 0 -c 2 -w 1 | tail -n 1; {}",
                 macos
             ),
+            // Windows keeps no `/proc` counters and no `vm_stat`; one PowerShell
+            // call answers CPU, memory and uptime in the lines parsed below. It
+            // runs in Git for Windows' shell, so the payload is single quoted
+            // and PowerShell interpolates its own `$…` variables. No GPU
+            // probe: the counters the other answers read do not exist there.
+            // i18n: data
+            Self::Windows => r#"printf 'cores '; nproc; printf 'disk '; df -Pk "$HOME" | tail -n 1; \
+powershell -NoProfile -Command '$o=Get-CimInstance Win32_OperatingSystem; $p=Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor|Where-Object Name -eq _Total; "cpuload "+$p.PercentProcessorTime; "memtotal "+($o.TotalVisibleMemorySize*1024); "memavail "+($o.FreePhysicalMemory*1024); "uptime "+[int]((Get-Date)-$o.LastBootUpTime).TotalSeconds'"#
+                .to_owned(),
         }
     }
 }
@@ -133,6 +151,11 @@ struct Fields {
     load: Option<[f32; 3]>,
     ticks: Option<Ticks>,
     idle: Option<f32>,
+    /// A share of all cores busy, as Windows reports it (no counters to diff).
+    cpu_load: Option<f32>,
+    /// Total and available memory in bytes, as Windows reports them.
+    mem_total_bytes: Option<u64>,
+    mem_free_bytes: Option<u64>,
     mem_total_kb: Option<u64>,
     mem_available_kb: Option<u64>,
     memsize: Option<u64>,
@@ -170,6 +193,16 @@ pub(crate) fn parse(text: &str, previous: Option<Ticks>) -> Result<Answer> {
             fields.load = load(rest.split_whitespace());
         } else if let Some(rest) = line.strip_prefix("cpu ") {
             fields.ticks = ticks(rest);
+        } else if let Some(rest) = line.strip_prefix("cpuload ") {
+            fields.cpu_load = rest
+                .trim()
+                .parse::<f32>()
+                .ok()
+                .filter(|busy| (0.0..=100.).contains(busy));
+        } else if let Some(rest) = line.strip_prefix("memtotal ") {
+            fields.mem_total_bytes = rest.trim().parse().ok();
+        } else if let Some(rest) = line.strip_prefix("memavail ") {
+            fields.mem_free_bytes = rest.trim().parse().ok();
         } else if let Some(rest) = line.strip_prefix(MEM_TOTAL) {
             fields.mem_total_kb = kilobytes(rest);
         } else if let Some(rest) = line.strip_prefix(MEM_AVAILABLE) {
@@ -212,29 +245,37 @@ pub(crate) fn parse(text: &str, previous: Option<Ticks>) -> Result<Answer> {
                 .ok();
         }
     }
-    let memory = match (fields.mem_total_kb, fields.mem_available_kb) {
-        (Some(total), Some(available)) => Some(Memory {
-            used: total.saturating_sub(available).saturating_mul(1024),
-            total: total.saturating_mul(1024),
+    let memory = match (fields.mem_total_bytes, fields.mem_free_bytes) {
+        // Windows reports the totals itself; there are no page counters.
+        (Some(total), Some(free)) => Some(Memory {
+            used: total.saturating_sub(free).min(total),
+            total,
         }),
-        _ => fields
-            .memsize
-            .zip(fields.page_size)
-            .and_then(|(total, page)| {
-                let pages = fields
-                    .pages
-                    .iter()
-                    .try_fold(0u64, |sum, pages| Some(sum.saturating_add((*pages)?)))?;
-                Some(Memory {
-                    used: pages.saturating_mul(page).min(total),
-                    total,
-                })
+        _ => match (fields.mem_total_kb, fields.mem_available_kb) {
+            (Some(total), Some(available)) => Some(Memory {
+                used: total.saturating_sub(available).saturating_mul(1024),
+                total: total.saturating_mul(1024),
             }),
+            _ => fields
+                .memsize
+                .zip(fields.page_size)
+                .and_then(|(total, page)| {
+                    let pages = fields
+                        .pages
+                        .iter()
+                        .try_fold(0u64, |sum, pages| Some(sum.saturating_add((*pages)?)))?;
+                    Some(Memory {
+                        used: pages.saturating_mul(page).min(total),
+                        total,
+                    })
+                }),
+        },
     }
     .filter(|memory| memory.total > 0);
-    let cpu = match (fields.ticks, previous, fields.idle) {
-        (Some(now), Some(previous), _) => now.usage_since(previous),
-        (_, _, Some(idle)) => Some(100. - idle),
+    let cpu = match (fields.cpu_load, fields.ticks, previous, fields.idle) {
+        (Some(busy), ..) => Some(busy),
+        (_, Some(now), Some(previous), _) => now.usage_since(previous),
+        (_, _, _, Some(idle)) => Some(100. - idle),
         _ => None,
     };
     if memory.is_none() && cpu.is_none() && fields.ticks.is_none() {

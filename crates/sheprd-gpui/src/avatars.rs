@@ -382,7 +382,11 @@ fn profile_avatar_with(
 
 fn avatar_agent() -> ureq::Agent {
     ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(5)))
+        // An owner's picture costs two requests (github.com redirects to
+        // avatars.githubusercontent.com), and this bound covers both. Five
+        // seconds cut them off on a slow link, and the sidebar then kept the
+        // GitHub mark instead of the owner's picture.
+        .timeout_global(Some(Duration::from_secs(20)))
         .max_redirects(0)
         .build()
         .into()

@@ -109,3 +109,26 @@ fn saved_local_files_are_checked_again() {
     let saved = r#"{"kind":"local","file":{"root":"/srv/site","entry":"index.html"}}"#;
     assert!(serde_json::from_str::<Location>(saved).is_ok());
 }
+
+/// A review tab opens the checkout its host reports, and an SSH host on
+/// Windows reports `C:\…`: that is absolute there, though not on this machine.
+#[test]
+fn a_checkout_is_absolute_on_its_own_host() {
+    for (checkout, name) in [
+        ("/srv/app", "app"),
+        (r"C:\Users\me\app", "app"),
+        ("C:/Users/me/app/", "app"),
+        (r"\\server\share\app", "app"),
+    ] {
+        let repo = OrchestratorRepo::new(checkout.into()).unwrap();
+        assert_eq!(repo.checkout, checkout);
+        assert_eq!(repo.name(), name);
+    }
+    for relative in ["", "app", "./app", "C:app"] {
+        assert!(
+            OrchestratorRepo::new(relative.into()).is_err(),
+            "{relative}"
+        );
+    }
+    assert!(OrchestratorRepo::new(format!("/{}", "a".repeat(4096))).is_err());
+}

@@ -16,7 +16,7 @@ mod remote;
 mod tests;
 
 pub(crate) use {
-    branches::{Branch, list as list_branches},
+    branches::{Branch, Source as BranchSource, list as list_branches},
     context::write_on as write_context,
     lookup::{Accounts, Lookup},
     model::{Item, Kind},

@@ -105,10 +105,10 @@ fn a_remote_answer_carries_its_gpu_lines() {
     // GPU lines alone are not a load sample.
     assert!(parse("gpu-nvidia 90, 1024, 4096\n", None).is_err());
     assert!(Os::Linux.command(true).contains("nvidia-smi"));
-    assert!(Os::MacOs.command(true).contains("IOAccelerator"));
+    assert!(Os::Mac.command(true).contains("IOAccelerator"));
     // With the GPU hidden, no GPU tool runs on the host.
     assert!(!Os::Linux.command(false).contains("gpu-"));
-    assert!(!Os::MacOs.command(false).contains("gpu-"));
+    assert!(!Os::Mac.command(false).contains("gpu-"));
 }
 
 #[test]

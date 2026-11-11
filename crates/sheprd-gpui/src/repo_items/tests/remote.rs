@@ -111,11 +111,45 @@ fn remote_fetch_preserves_branches_and_notes_belong_to_the_created_worktree() {
 #[test]
 fn invalid_remote_paths_are_refused_before_building_a_command() {
     let item = &parse(&response(), &origin(), Kind::Issue).unwrap()[0];
-    for path in ["relative", "~/repo", "/repo\nother", "C:\\repo"] {
+    for path in ["relative", "~/repo", "/repo\nother", "C:repo", "\\\\?\\"] {
         assert!(matches!(
             remote::fetch_script(path, item),
             Err(Error::Client(sheprd_client::Error::InvalidGitDir))
         ));
         assert!(context::remote_script(path, item, &origin()).is_err());
+    }
+}
+
+/// The branches of a Windows host's repository are read there, from the plain
+/// spelling of the Git directory the daemon reported.
+#[test]
+fn a_windows_repository_lists_its_branches_on_the_host() {
+    let script =
+        remote::branches_script(r"\\?\C:\repo\.git", "%(refname)%00%(worktreepath)").unwrap();
+    assert!(script.contains(r"--git-dir 'C:\repo\.git'"), "{script}");
+    assert!(!script.contains(r"?\"), "{script}");
+    assert!(script.contains("for-each-ref"), "{script}");
+    assert!(script.contains("refs/heads"), "{script}");
+    assert!(matches!(
+        remote::branches_script("relative/.git", "%(refname)"),
+        Err(Error::Client(sheprd_client::Error::InvalidGitDir))
+    ));
+}
+
+/// A Windows host reports its checkout as `C:\…`, and its own shell mangles
+/// the extended-length spelling: the command names the plain folder.
+#[test]
+fn a_windows_checkout_names_its_plain_folder() {
+    let item = &parse(&response(), &origin(), Kind::Issue).unwrap()[0];
+    for (reported, plain) in [
+        (r"C:\repo", r"C:\repo"),
+        (r"\\?\C:\repo", r"C:\repo"),
+        (r"\\?\UNC\server\share", r"\\server\share"),
+    ] {
+        let fetch = remote::fetch_script(reported, item).unwrap();
+        assert!(fetch.contains(plain), "{fetch}");
+        assert!(!fetch.contains(r"?\"), "{fetch}");
+        let context = context::remote_script(reported, item, &origin()).unwrap();
+        assert!(context.contains(plain), "{context}");
     }
 }

@@ -3,6 +3,8 @@ use crate::sidebar::layout_tests::snapshot;
 use sheprd_client::protocol::AgentStatus;
 use sheprd_session::CoreWorkspace;
 
+mod workspace_folder;
+
 #[test]
 fn a_herdr_1_snapshot_reads_as_its_session() {
     let snapshot = snapshot(4);

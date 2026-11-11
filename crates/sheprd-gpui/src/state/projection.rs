@@ -6,6 +6,39 @@ use sheprd_client::{
 };
 use std::sync::Arc;
 
+/// A snapshot with every workspace's own folder filled in. A Windows daemon
+/// leaves `new_workspace_cwd` empty, and a workspace without a folder loses its
+/// repository: Issues and pull requests cannot read it, Review cannot open it,
+/// and the sidebar shows the generic GitHub mark where the owner's avatar
+/// belongs. Filling it on the way in covers every reader of the snapshot, and
+/// its panes still name the folder they run in.
+fn with_workspace_folders(mut snapshot: Arc<ClientShellSnapshot>) -> Arc<ClientShellSnapshot> {
+    if snapshot
+        .workspaces
+        .iter()
+        .all(|workspace| crate::session_model::named(&workspace.new_workspace_cwd))
+    {
+        return snapshot;
+    }
+    let folders: Vec<Option<String>> = {
+        let source = &*snapshot;
+        source
+            .workspaces
+            .iter()
+            .map(|workspace| {
+                crate::session_model::workspace_folder(source, workspace).map(str::to_owned)
+            })
+            .collect()
+    };
+    let source = Arc::make_mut(&mut snapshot);
+    for (workspace, folder) in source.workspaces.iter_mut().zip(folders) {
+        if let Some(folder) = folder {
+            workspace.new_workspace_cwd = folder;
+        }
+    }
+    snapshot
+}
+
 fn same_input_projection(old: &ClientShellSnapshot, new: &ClientShellSnapshot) -> bool {
     // New protocol fields must make an explicit choice about input invalidation.
     let ClientShellSnapshot {
@@ -87,6 +120,7 @@ impl LiveState {
     }
 
     pub(super) fn receive_snapshot(&mut self, snapshot: Arc<ClientShellSnapshot>) {
+        let snapshot = with_workspace_folders(snapshot);
         if self.latest_snapshot().is_some_and(|latest| {
             latest.boot_id == snapshot.boot_id && latest.revision > snapshot.revision
         }) {

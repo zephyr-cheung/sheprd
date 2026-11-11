@@ -10,6 +10,7 @@ mod incompatible;
 #[cfg(unix)]
 mod mise;
 mod probe_failure;
+mod remote_dir;
 mod serve;
 mod windows_host;
 #[cfg(windows)]

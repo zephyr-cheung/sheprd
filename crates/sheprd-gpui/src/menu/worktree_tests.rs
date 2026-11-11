@@ -15,6 +15,7 @@ use gpui::{Entity, VisualTestContext};
 mod branch_first;
 mod branch_follows_name;
 mod branch_only;
+mod branch_source;
 mod branch_typing;
 mod dialog_entry;
 mod field_focus;
